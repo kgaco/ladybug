@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>てんとう虫あそび</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(ellipse at center, #a8d8a8 0%, #7bc47b 40%, #5aa05a 100%);
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    touch-action: none;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+  }
+  #count {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    font-size: 28px;
+    font-family: 'Helvetica Neue', sans-serif;
+    color: rgba(255,255,255,0.85);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="count">🐞 <span id="num">0</span></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const numEl = document.getElementById('num');
+
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+});
+
+// ── 色バリエーション（形は共通） ─────────────────────
+const SPECIES = [
+  { body: '#e8221a', stroke: '#111' },  // 赤（定番）
+  { body: '#f07020', stroke: '#111' },  // オレンジ
+  { body: '#f5df10', stroke: '#111' },  // 黄色
+  { body: '#c40000', stroke: '#111' },  // 深紅
+  { body: '#2aaa55', stroke: '#003' },  // 緑
+  { body: '#dd10aa', stroke: '#220' },  // ピンク
+  { body: '#f9e0b0', stroke: '#553' },  // クリーム
+  { body: '#8844cc', stroke: '#110' },  // 紫
+];
+
+// ── てんとう虫クラス ──────────────────────────────────
+class Ladybug {
+  constructor() {
+    this.sp = Math.random() < 0.95 ? SPECIES[0] : SPECIES[1 + Math.floor(Math.random() * (SPECIES.length - 1))];
+    this.r = 32 + Math.random() * 20;
+    this.reset();
+    this.frozen = 0;       // 停止残り時間(ms)
+    this.alpha = 0;        // フェードin
+    this.fadeIn = true;
+    this.life = 12000 + Math.random() * 20000;  // 生存時間
+    this.age = 0;
+    this.wander = 0;
+    this.targetAngle = this.angle;  // 目標角度（補間用）
+  }
+
+  reset() {
+    // 4辺のどこかから出現
+    const side = Math.floor(Math.random() * 4);
+    const r = this.r;
+    if (side === 0) { this.x = Math.random() * W; this.y = -r; }
+    else if (side === 1) { this.x = W + r; this.y = Math.random() * H; }
+    else if (side === 2) { this.x = Math.random() * W; this.y = H + r; }
+    else { this.x = -r; this.y = Math.random() * H; }
+
+    // 中央方向＋ランダム角度
+    const toCenter = Math.atan2(H / 2 - this.y, W / 2 - this.x);
+    this.angle = toCenter + (Math.random() - 0.5) * 1.2;
+    this.speed = 0.4 + Math.random() * 0.5;
+  }
+
+  update(dt) {
+    this.age += dt;
+
+    // フェードin
+    if (this.fadeIn) {
+      this.alpha = Math.min(1, this.alpha + dt / 600);
+      if (this.alpha >= 1) { this.alpha = 1; this.fadeIn = false; }
+    }
+
+    // フェードout
+    const fadeStart = this.life - 2500;
+    if (this.age > fadeStart) {
+      this.alpha = Math.max(0, 1 - (this.age - fadeStart) / 2500);
+    }
+
+    if (this.frozen > 0) {
+      this.frozen -= dt;
+      return;
+    }
+
+    // ターゲット角度をゆっくり変化させる（低周波のサイン波）
+    this.wander += dt * 0.0004;
+    this.targetAngle += Math.sin(this.wander) * 0.008 * dt * 0.1;
+
+    // 壁に近づいたらターゲット角度を内側に向ける
+    const margin = this.r * 3;
+    if (this.x < margin)     this.targetAngle = lerp(this.targetAngle, 0, 0.04);
+    if (this.x > W - margin) this.targetAngle = lerp(this.targetAngle, Math.PI, 0.04);
+    if (this.y < margin)     this.targetAngle = lerp(this.targetAngle, Math.PI * 0.5, 0.04);
+    if (this.y > H - margin) this.targetAngle = lerp(this.targetAngle, -Math.PI * 0.5, 0.04);
+
+    // 現在角度をターゲットへ滑らかに追従（最短回転で補間）
+    let da = this.targetAngle - this.angle;
+    while (da > Math.PI)  da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    this.angle += da * Math.min(0.03 * dt * 0.06, 1);
+
+    this.x += Math.cos(this.angle) * this.speed * dt * 0.06;
+    this.y += Math.sin(this.angle) * this.speed * dt * 0.06;
+  }
+
+  touch() {
+    this.frozen = 3000 + Math.random() * 2000;
+  }
+
+  hitTest(tx, ty) {
+    const dx = tx - this.x, dy = ty - this.y;
+    return dx * dx + dy * dy < this.r * this.r * 1.6;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle + Math.PI / 2);
+
+    const r = this.r;
+    const sp = this.sp;
+    const frozen = this.frozen > 0;
+    const BLACK = '#111111';
+    const lw = r * 0.07;
+
+    // ── ボディ（正円） ──
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = sp.body;
+    ctx.fill();
+    ctx.strokeStyle = BLACK;
+    ctx.lineWidth = lw;
+    ctx.stroke();
+
+    // ── 翅の分割線・水玉をボディ内にクリップ ──
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, r - lw * 0.5, 0, Math.PI * 2);
+    ctx.clip();
+
+    // 分割線（中央垂直）— 先に描く
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(0,  r);
+    ctx.strokeStyle = BLACK;
+    ctx.lineWidth = lw;
+    ctx.stroke();
+
+    // 水玉7個（上下は縁でクリップ、中列は中心寄り）
+    const sr = r * 0.175;
+    const SPOTS = [
+      [ 0.00, -0.36],                   // 上中央（スクテルム）
+      [-0.70, -0.48], [ 0.70, -0.48],  // 上ペア（縁でクリップ）
+      [-0.42,  0.18], [ 0.42,  0.18],  // 中ペア（中心寄り）
+      [-0.62,  0.70], [ 0.62,  0.70],  // 下ペア（縁でクリップ）
+    ];
+    ctx.fillStyle = BLACK;
+    SPOTS.forEach(([sx, sy]) => {
+      ctx.beginPath();
+      ctx.arc(sx * r, sy * r, sr, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    ctx.restore(); // end clip
+
+    // ── 頭部（黒い半円、中央上） ──
+    const hx = 0, hy = -r * 0.80, hr = r * 0.42;
+    ctx.beginPath();
+    ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+    ctx.fillStyle = BLACK;
+    ctx.fill();
+
+    // 触角（太い丸頭ツノ形、左右対称）
+    [-0.50, 0.50].forEach(ox => {
+      const ax = hx + ox * hr;
+      const ay = hy - hr * 0.62;
+      const tw = hr * 0.14, th = hr * 0.52;
+      ctx.beginPath();
+      // 胴体（角丸長方形）
+      ctx.roundRect(ax - tw, ay - th, tw * 2, th * 1.1, tw);
+      ctx.fillStyle = BLACK;
+      ctx.fill();
+    });
+
+    // 左右対称の目（白目＋瞳＋光沢）
+    [-0.52, 0.52].forEach(ox => {
+      const ex = hx + ox * hr, ey = hy - hr * 0.05;
+      // 白目
+      ctx.beginPath();
+      ctx.arc(ex, ey, hr * 0.38, 0, Math.PI * 2);
+      ctx.fillStyle = 'white';
+      ctx.fill();
+      // 瞳
+      ctx.beginPath();
+      ctx.arc(ex + ox * hr * 0.12, ey + hr * 0.08, hr * 0.20, 0, Math.PI * 2);
+      ctx.fillStyle = BLACK;
+      ctx.fill();
+      // 光沢
+      ctx.beginPath();
+      ctx.arc(ex + ox * hr * 0.04 - hr * 0.10, ey - hr * 0.12, hr * 0.09, 0, Math.PI * 2);
+      ctx.fillStyle = 'white';
+      ctx.fill();
+    });
+
+    // ── 光沢 ──
+    const grad = ctx.createRadialGradient(-r * 0.28, -r * 0.32, r * 0.02, -r * 0.12, -r * 0.18, r * 0.68);
+    grad.addColorStop(0, 'rgba(255,255,255,0.45)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // ── 停止中キラキラ ──
+    if (frozen) {
+      const t = Date.now() * 0.003;
+      for (let i = 0; i < 5; i++) {
+        const a = t + i * Math.PI * 0.4;
+        ctx.save();
+        ctx.translate(Math.cos(a) * r * 1.18, Math.sin(a) * r * 1.18);
+        ctx.rotate(t * 2 + i);
+        ctx.fillStyle = `hsla(${(t * 60 + i * 72) % 360},100%,70%,0.9)`;
+        drawStar(ctx, 0, 0, r * 0.08, r * 0.20, 4);
+        ctx.restore();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  get dead() { return this.age > this.life; }
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function drawStar(ctx, x, y, r1, r2, n) {
+  ctx.beginPath();
+  for (let i = 0; i < n * 2; i++) {
+    const angle = (i * Math.PI) / n - Math.PI / 2;
+    const rad = i % 2 === 0 ? r2 : r1;
+    i === 0 ? ctx.moveTo(x + Math.cos(angle) * rad, y + Math.sin(angle) * rad)
+             : ctx.lineTo(x + Math.cos(angle) * rad, y + Math.sin(angle) * rad);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ── メインループ ─────────────────────────────────────
+let bugs = [];
+let lastTime = performance.now();
+let nextSpawn = 2000;
+
+function spawnBug() {
+  bugs.push(new Ladybug());
+  numEl.textContent = bugs.length;
+  nextSpawn = 3000 + Math.random() * 6000;
+}
+
+function loop(now) {
+  const dt = Math.min(now - lastTime, 100);
+  lastTime = now;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // スポーン
+  nextSpawn -= dt;
+  if (nextSpawn <= 0 && bugs.length < 12) spawnBug();
+
+  // 更新・描画
+  bugs = bugs.filter(b => {
+    b.update(dt);
+    b.draw(ctx);
+    return !b.dead;
+  });
+  numEl.textContent = bugs.length;
+
+  requestAnimationFrame(loop);
+}
+
+// ── タッチ / クリック ────────────────────────────────
+function handleTouch(e) {
+  e.preventDefault();
+  const touches = e.changedTouches || [e];
+  for (const t of touches) {
+    const rect = canvas.getBoundingClientRect();
+    const tx = (t.clientX ?? t.pageX) - rect.left;
+    const ty = (t.clientY ?? t.pageY) - rect.top;
+    bugs.forEach(b => { if (b.hitTest(tx, ty)) b.touch(); });
+  }
+}
+canvas.addEventListener('touchstart', handleTouch, { passive: false });
+canvas.addEventListener('mousedown', handleTouch);
+
+// ── 開始 ────────────────────────────────────────────
+spawnBug();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
