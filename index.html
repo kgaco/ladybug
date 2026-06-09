@@ -224,9 +224,9 @@ class Ladybug {
       ctx.arc(ex + ox * hr * 0.12, ey + hr * 0.08, hr * 0.20, 0, Math.PI * 2);
       ctx.fillStyle = BLACK;
       ctx.fill();
-      // 光沢
+      // 光沢（胴体方向＝下側）
       ctx.beginPath();
-      ctx.arc(ex + ox * hr * 0.04 - hr * 0.10, ey - hr * 0.12, hr * 0.09, 0, Math.PI * 2);
+      ctx.arc(ex + ox * hr * 0.10, ey + hr * 0.24, hr * 0.09, 0, Math.PI * 2);
       ctx.fillStyle = 'white';
       ctx.fill();
     });
