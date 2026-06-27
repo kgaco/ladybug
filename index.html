@@ -262,6 +262,214 @@ class Ladybug {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
+// ── 蝶の色バリエーション ──────────────────────────────
+const BUTTERFLY_COLORS = [
+  { wing: '#7b9fe8', hi: 'rgba(190,210,255,0.55)' },  // 青紫（参考画像）
+  { wing: '#9b7fe8', hi: 'rgba(210,190,255,0.55)' },  // 紫
+  { wing: '#6ecce8', hi: 'rgba(160,230,255,0.55)' },  // 水色
+  { wing: '#e87baa', hi: 'rgba(255,185,215,0.55)' },  // ピンク
+  { wing: '#6be898', hi: 'rgba(165,255,200,0.55)' },  // 緑
+];
+
+// ── 蝶クラス（てんとう虫と同じ動き・参考画像デザイン） ──
+class Butterfly {
+  constructor() {
+    this.color = BUTTERFLY_COLORS[Math.floor(Math.random() * BUTTERFLY_COLORS.length)];
+    this.r = 32 + Math.random() * 16;
+    this.reset();
+    this.frozen = 0;
+    this.alpha = 0;
+    this.fadeIn = true;
+    this.life = 12000 + Math.random() * 20000;
+    this.age = 0;
+    this.wander = 0;
+    this.targetAngle = this.angle;
+  }
+
+  reset() {
+    const side = Math.floor(Math.random() * 4);
+    const r = this.r;
+    if (side === 0) { this.x = Math.random() * W; this.y = -r; }
+    else if (side === 1) { this.x = W + r; this.y = Math.random() * H; }
+    else if (side === 2) { this.x = Math.random() * W; this.y = H + r; }
+    else { this.x = -r; this.y = Math.random() * H; }
+    const toCenter = Math.atan2(H / 2 - this.y, W / 2 - this.x);
+    this.angle = toCenter + (Math.random() - 0.5) * 1.2;
+    this.speed = 0.32 + Math.random() * 0.25;
+  }
+
+  update(dt) {
+    this.age += dt;
+    if (this.fadeIn) {
+      this.alpha = Math.min(1, this.alpha + dt / 600);
+      if (this.alpha >= 1) { this.alpha = 1; this.fadeIn = false; }
+    }
+    const fadeStart = this.life - 2500;
+    if (this.age > fadeStart) this.alpha = Math.max(0, 1 - (this.age - fadeStart) / 2500);
+    if (this.frozen > 0) { this.frozen -= dt; return; }
+
+    this.wander += dt * 0.0004;
+    this.targetAngle += Math.sin(this.wander) * 0.008 * dt * 0.1;
+
+    const margin = this.r * 3;
+    if (this.x < margin)     this.targetAngle = lerp(this.targetAngle, 0, 0.04);
+    if (this.x > W - margin) this.targetAngle = lerp(this.targetAngle, Math.PI, 0.04);
+    if (this.y < margin)     this.targetAngle = lerp(this.targetAngle, Math.PI * 0.5, 0.04);
+    if (this.y > H - margin) this.targetAngle = lerp(this.targetAngle, -Math.PI * 0.5, 0.04);
+
+    let da = this.targetAngle - this.angle;
+    while (da > Math.PI)  da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    this.angle += da * Math.min(0.03 * dt * 0.06, 1);
+
+    this.x += Math.cos(this.angle) * this.speed * dt * 0.06;
+    this.y += Math.sin(this.angle) * this.speed * dt * 0.06;
+  }
+
+  get dead() { return this.age > this.life; }
+
+  hitTest(tx, ty) {
+    const dx = tx - this.x, dy = ty - this.y;
+    return dx * dx + dy * dy < this.r * this.r * 5;
+  }
+
+  touch() { this.frozen = 3000 + Math.random() * 2000; }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle + Math.PI / 2);
+
+    const r = this.r;
+    const c = this.color;
+    const DARK = '#241204';
+    const lw = r * 0.075;
+    const frozen = this.frozen > 0;
+
+    // 左右の翅を描画（X軸方向に広がる・参考画像準拠）
+    [-1, 1].forEach(side => {
+      ctx.save();
+      ctx.scale(side, 1);
+
+      // ── 上翅：横長の大きな丸翅 ──
+      // 胴体左上から始まり右上に大きく広がり下に戻る
+      ctx.beginPath();
+      ctx.moveTo(r * 0.10, -r * 0.55);   // 胴体上部の接続点
+      ctx.bezierCurveTo(
+        r * 0.30, -r * 1.20,             // 上へ膨らむ
+        r * 1.30, -r * 1.10,             // 右上の丸み
+        r * 1.45,  r * 0.00              // 右端
+      );
+      ctx.bezierCurveTo(
+        r * 1.35,  r * 0.60,             // 右下の丸み
+        r * 0.35,  r * 0.30,             // 下へ収束
+        r * 0.10,  r * 0.05              // 胴体下部の接続点
+      );
+      ctx.fillStyle = c.wing;
+      ctx.fill();
+      ctx.strokeStyle = DARK;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      // ── 下翅：やや小さめ ──
+      ctx.beginPath();
+      ctx.moveTo(r * 0.10,  r * 0.10);
+      ctx.bezierCurveTo(
+        r * 0.40,  r * 0.10,
+        r * 1.10,  r * 0.45,
+        r * 1.00,  r * 0.95
+      );
+      ctx.bezierCurveTo(
+        r * 0.85,  r * 1.30,
+        r * 0.20,  r * 1.20,
+        r * 0.10,  r * 0.75
+      );
+      ctx.fillStyle = c.wing;
+      ctx.fill();
+      ctx.strokeStyle = DARK;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      // ── 翅脈（上翅：胴体から放射状） ──
+      ctx.strokeStyle = DARK;
+      ctx.lineWidth = lw * 0.58;
+      ctx.lineCap = 'round';
+      [
+        // 上翅の脈
+        [r*.10,-r*.40, r*.40,-r*.80, r*.90,-r*.90, r*1.20,-r*.75],
+        [r*.10,-r*.20, r*.50,-r*.40, r*1.00,-r*.30, r*1.38,-r*.10],
+        [r*.10, r*.00, r*.45, r*.00, r*.95, r*.10, r*1.32, r*.30],
+        // 下翅の脈
+        [r*.10, r*.20, r*.45, r*.40, r*.80, r*.70, r*.88, r*.95],
+      ].forEach(p => {
+        ctx.beginPath();
+        ctx.moveTo(p[0],p[1]);
+        ctx.bezierCurveTo(p[2],p[3],p[4],p[5],p[6],p[7]);
+        ctx.stroke();
+      });
+
+      // ── セルハイライト ──
+      ctx.fillStyle = c.hi;
+      [
+        [r*.55,-r*.72, r*.14,r*.24,-0.30],  // 上翅 上セル
+        [r*1.05,-r*.38, r*.12,r*.18, 0.15], // 上翅 右上セル
+        [r*1.20, r*.18, r*.10,r*.16, 0.50], // 上翅 右下セル
+        [r*.55, r*.62, r*.13,r*.20, 0.20],  // 下翅セル
+      ].forEach(([ex,ey,rw,rh,rot]) => {
+        ctx.beginPath();
+        ctx.ellipse(ex,ey,rw,rh,rot,0,Math.PI*2);
+        ctx.fill();
+      });
+
+      ctx.restore();
+    });
+
+    // ── 胴体（縦長楕円） ──
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.15, r * 0.09, r * 0.70, 0, 0, Math.PI * 2);
+    ctx.fillStyle = DARK;
+    ctx.fill();
+
+    // ── 頭部 ──
+    ctx.beginPath();
+    ctx.arc(0, -r * 0.52, r * 0.14, 0, Math.PI * 2);
+    ctx.fillStyle = DARK;
+    ctx.fill();
+
+    // ── 触角（曲がった形・参考画像準拠） ──
+    ctx.strokeStyle = DARK;
+    ctx.lineWidth = r * 0.055;
+    ctx.lineCap = 'round';
+    [-1, 1].forEach(s => {
+      ctx.beginPath();
+      ctx.moveTo(s * r * 0.07, -r * 0.62);
+      ctx.quadraticCurveTo(s * r * 0.55, -r * 1.00, s * r * 0.28, -r * 1.35);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(s * r * 0.28, -r * 1.35, r * 0.07, 0, Math.PI * 2);
+      ctx.fillStyle = DARK;
+      ctx.fill();
+    });
+
+    // ── 停止キラキラ ──
+    if (frozen) {
+      const t = Date.now() * 0.003;
+      for (let i = 0; i < 5; i++) {
+        const a = t + i * Math.PI * 0.4;
+        ctx.save();
+        ctx.translate(Math.cos(a) * r * 1.7, Math.sin(a) * r * 1.7);
+        ctx.rotate(t * 2 + i);
+        ctx.fillStyle = `hsla(${(t * 60 + i * 72) % 360},100%,70%,0.9)`;
+        drawStar(ctx, 0, 0, r * 0.08, r * 0.20, 4);
+        ctx.restore();
+      }
+    }
+
+    ctx.restore();
+  }
+}
+
 function drawStar(ctx, x, y, r1, r2, n) {
   ctx.beginPath();
   for (let i = 0; i < n * 2; i++) {
@@ -276,13 +484,19 @@ function drawStar(ctx, x, y, r1, r2, n) {
 
 // ── メインループ ─────────────────────────────────────
 let bugs = [];
+let butterflies = [];
 let lastTime = performance.now();
 let nextSpawn = 2000;
+let nextButterflySpawn = 4000 + Math.random() * 6000;
 
 function spawnBug() {
   bugs.push(new Ladybug());
-  numEl.textContent = bugs.length;
   nextSpawn = 3000 + Math.random() * 6000;
+}
+
+function spawnButterfly() {
+  butterflies.push(new Butterfly());
+  nextButterflySpawn = 4000 + Math.random() * 7000;
 }
 
 function loop(now) {
@@ -295,13 +509,23 @@ function loop(now) {
   nextSpawn -= dt;
   if (nextSpawn <= 0 && bugs.length < 12) spawnBug();
 
-  // 更新・描画
+  nextButterflySpawn -= dt;
+  if (nextButterflySpawn <= 0 && butterflies.length < 4) spawnButterfly();
+
+  // 更新・描画（蝶を先に描いててんとう虫を前面に）
+  butterflies = butterflies.filter(b => {
+    b.update(dt);
+    b.draw(ctx);
+    return !b.dead;
+  });
+
   bugs = bugs.filter(b => {
     b.update(dt);
     b.draw(ctx);
     return !b.dead;
   });
-  numEl.textContent = bugs.length;
+
+  numEl.textContent = bugs.length + butterflies.length;
 
   requestAnimationFrame(loop);
 }
@@ -315,6 +539,7 @@ function handleTouch(e) {
     const tx = (t.clientX ?? t.pageX) - rect.left;
     const ty = (t.clientY ?? t.pageY) - rect.top;
     bugs.forEach(b => { if (b.hitTest(tx, ty)) b.touch(); });
+    butterflies.forEach(b => { if (b.hitTest(tx, ty)) b.touch(); });
   }
 }
 canvas.addEventListener('touchstart', handleTouch, { passive: false });
