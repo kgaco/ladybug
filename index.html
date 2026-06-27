@@ -309,7 +309,7 @@ class Butterfly {
       this.y = r * 2 + Math.random() * (H / 2 - r * 4);
     }
     this.angle = this.baseDir + (Math.random() - 0.5) * 0.4;
-    this.speed = (0.32 + Math.random() * 0.25) * 1.6;   // 速度1.6倍
+    this.speed = (0.32 + Math.random() * 0.25) * 1.6 * 1.5;   // 速度1.6×1.5倍
   }
 
   update(dt) {
