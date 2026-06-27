@@ -271,31 +271,33 @@ const BUTTERFLY_COLORS = [
   { wing: '#6be898', hi: 'rgba(165,255,200,0.55)' },  // 緑
 ];
 
-// ── 蝶クラス（てんとう虫と同じ動き・参考画像デザイン） ──
+// ── 蝶クラス（左右方向固定・サイズ半分・速度1.6倍） ──
 class Butterfly {
   constructor() {
     this.color = BUTTERFLY_COLORS[Math.floor(Math.random() * BUTTERFLY_COLORS.length)];
-    this.r = 32 + Math.random() * 16;
+    this.r = 16 + Math.random() * 8;                     // サイズ半分
+    this.baseDir = Math.random() < 0.5 ? 0 : Math.PI;   // 0=右へ、π=左へ
     this.reset();
     this.frozen = 0;
     this.alpha = 0;
     this.fadeIn = true;
-    this.life = 12000 + Math.random() * 20000;
+    this.life = 30000;   // フォールバック（通常は画面外に出て消える）
     this.age = 0;
-    this.wander = 0;
+    this.wander = Math.random() * Math.PI * 2;
     this.targetAngle = this.angle;
   }
 
   reset() {
-    const side = Math.floor(Math.random() * 4);
     const r = this.r;
-    if (side === 0) { this.x = Math.random() * W; this.y = -r; }
-    else if (side === 1) { this.x = W + r; this.y = Math.random() * H; }
-    else if (side === 2) { this.x = Math.random() * W; this.y = H + r; }
-    else { this.x = -r; this.y = Math.random() * H; }
-    const toCenter = Math.atan2(H / 2 - this.y, W / 2 - this.x);
-    this.angle = toCenter + (Math.random() - 0.5) * 1.2;
-    this.speed = 0.32 + Math.random() * 0.25;
+    if (this.baseDir === 0) {               // 左から出現→右へ
+      this.x = -r * 2;
+      this.y = r * 2 + Math.random() * (H - r * 4);
+    } else {                                // 右から出現→左へ
+      this.x = W + r * 2;
+      this.y = r * 2 + Math.random() * (H - r * 4);
+    }
+    this.angle = this.baseDir + (Math.random() - 0.5) * 0.4;
+    this.speed = (0.32 + Math.random() * 0.25) * 1.6;   // 速度1.6倍
   }
 
   update(dt) {
@@ -304,29 +306,50 @@ class Butterfly {
       this.alpha = Math.min(1, this.alpha + dt / 600);
       if (this.alpha >= 1) { this.alpha = 1; this.fadeIn = false; }
     }
-    const fadeStart = this.life - 2500;
-    if (this.age > fadeStart) this.alpha = Math.max(0, 1 - (this.age - fadeStart) / 2500);
+
+    // 画面端に近づいたらフェードアウト開始
+    const exitX = this.baseDir === 0 ? W : 0;
+    const distToExit = Math.abs(this.x - exitX);
+    if (distToExit < this.r * 6) {
+      this.alpha = Math.max(0, distToExit / (this.r * 6));
+    }
+
     if (this.frozen > 0) { this.frozen -= dt; return; }
 
-    this.wander += dt * 0.0004;
-    this.targetAngle += Math.sin(this.wander) * 0.008 * dt * 0.1;
+    // ゆっくりと方向変化（低周波）
+    this.wander += dt * 0.0003;
+    this.targetAngle += Math.sin(this.wander) * 0.006 * dt * 0.1;
 
+    // 角度をbaseDir ± 55°以内に制限（左右方向を維持）
+    const maxDev = Math.PI / 3.3;
+    let dev = this.targetAngle - this.baseDir;
+    while (dev > Math.PI)  dev -= Math.PI * 2;
+    while (dev < -Math.PI) dev += Math.PI * 2;
+    if (Math.abs(dev) > maxDev) {
+      this.targetAngle = this.baseDir + Math.sign(dev) * maxDev;
+    }
+
+    // 上下の壁に近づいたら水平方向に戻す（緩やか）
     const margin = this.r * 3;
-    if (this.x < margin)     this.targetAngle = lerp(this.targetAngle, 0, 0.04);
-    if (this.x > W - margin) this.targetAngle = lerp(this.targetAngle, Math.PI, 0.04);
-    if (this.y < margin)     this.targetAngle = lerp(this.targetAngle, Math.PI * 0.5, 0.04);
-    if (this.y > H - margin) this.targetAngle = lerp(this.targetAngle, -Math.PI * 0.5, 0.04);
+    if (this.y < margin)     this.targetAngle = lerp(this.targetAngle, this.baseDir, 0.05);
+    if (this.y > H - margin) this.targetAngle = lerp(this.targetAngle, this.baseDir, 0.05);
 
+    // 現在角度を滑らかに追従
     let da = this.targetAngle - this.angle;
     while (da > Math.PI)  da -= Math.PI * 2;
     while (da < -Math.PI) da += Math.PI * 2;
-    this.angle += da * Math.min(0.03 * dt * 0.06, 1);
+    this.angle += da * Math.min(0.018 * dt * 0.06, 1);
 
     this.x += Math.cos(this.angle) * this.speed * dt * 0.06;
     this.y += Math.sin(this.angle) * this.speed * dt * 0.06;
   }
 
-  get dead() { return this.age > this.life; }
+  get dead() {
+    if (this.age > this.life) return true;
+    if (this.baseDir === 0 && this.x > W + this.r * 3) return true;   // 右へ抜けた
+    if (this.baseDir !== 0 && this.x < -this.r * 3) return true;      // 左へ抜けた
+    return false;
+  }
 
   hitTest(tx, ty) {
     const dx = tx - this.x, dy = ty - this.y;
