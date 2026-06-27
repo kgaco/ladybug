@@ -29,16 +29,28 @@
     text-shadow: 0 1px 4px rgba(0,0,0,0.3);
     pointer-events: none;
   }
+  #bcount {
+    position: fixed;
+    top: 52px;
+    right: 16px;
+    font-size: 28px;
+    font-family: 'Helvetica Neue', sans-serif;
+    color: rgba(255,255,255,0.85);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    pointer-events: none;
+  }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="count">🐞 <span id="num">0</span></div>
+<div id="bcount">🦋 <span id="bnum">0</span></div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const numEl = document.getElementById('num');
+const bnumEl = document.getElementById('bnum');
 
 let W = canvas.width = window.innerWidth;
 let H = canvas.height = window.innerHeight;
@@ -291,10 +303,10 @@ class Butterfly {
     const r = this.r;
     if (this.baseDir === 0) {               // 左から出現→右へ
       this.x = -r * 2;
-      this.y = r * 2 + Math.random() * (H - r * 4);
+      this.y = r * 2 + Math.random() * (H / 2 - r * 4);
     } else {                                // 右から出現→左へ
       this.x = W + r * 2;
-      this.y = r * 2 + Math.random() * (H - r * 4);
+      this.y = r * 2 + Math.random() * (H / 2 - r * 4);
     }
     this.angle = this.baseDir + (Math.random() - 0.5) * 0.4;
     this.speed = (0.32 + Math.random() * 0.25) * 1.6;   // 速度1.6倍
@@ -548,7 +560,8 @@ function loop(now) {
     return !b.dead;
   });
 
-  numEl.textContent = bugs.length + butterflies.length;
+  numEl.textContent = bugs.length;
+  bnumEl.textContent = butterflies.length;
 
   requestAnimationFrame(loop);
 }
